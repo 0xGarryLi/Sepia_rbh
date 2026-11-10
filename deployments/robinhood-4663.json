@@ -1,0 +1,22 @@
+{
+  "chainId": 4663,
+  "explorer": "https://robinhoodchain.blockscout.com",
+  "status": "not deployed",
+  "token": {
+    "SEPIA": null,
+    "launchpad": "Pons"
+  },
+  "contracts": {
+    "ERC5564Announcer": null,
+    "ERC6538Registry": null,
+    "SepiaRouter": null,
+    "FeeCollector": null,
+    "UniswapV3Adapter": null
+  },
+  "params": {
+    "maxFeeBps": null,
+    "opsShareBps": null,
+    "tiers": { "Ink": null, "Cloud": null, "Abyss": null }
+  },
+  "multisig": null
+}

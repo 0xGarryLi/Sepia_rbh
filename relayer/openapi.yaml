@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: Sepia Relayer API
+  version: 0.1.0
+  description: >
+    Quotes and submits withdrawals from ERC-5564 one-time addresses on Robinhood Chain.
+    Draft for Phase 1. Not live.
+servers:
+  - url: https://relayer.sepia.example/v1
+    description: placeholder, final URL announced on @sepia_rbh
+paths:
+  /health:
+    get:
+      summary: Liveness and gas state
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  chainId: { type: integer, example: 4663 }
+                  gasPriceGwei: { type: string, example: "0.01" }
+                  router: { $ref: "#/components/schemas/Address" }
+  /quote:
+    post:
+      summary: Fee quote for a withdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner, token, amount]
+              properties:
+                owner: { $ref: "#/components/schemas/Address" }
+                token: { $ref: "#/components/schemas/Address" }
+                amount: { $ref: "#/components/schemas/Uint" }
+                tierPass: { type: string, description: Optional 24 h pass from /tier-pass }
+      responses:
+        "200":
+          description: Quote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quote" }
+        "422": { description: Token not supported or amount below minimum }
+  /withdraw:
+    post:
+      summary: Submit a permit withdrawal (path B) or request a gas top-up (path C)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/PermitWithdraw"
+                - $ref: "#/components/schemas/TopUpRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string, enum: [pending] }
+        "400": { description: Bad signature, expired quote or nonce mismatch }
+        "403": { description: Destination failed sanctions screening }
+        "429": { description: Rate limited }
+  /withdraw/{id}:
+    get:
+      summary: Withdrawal status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string, enum: [pending, submitted, confirmed, failed] }
+                  txHash: { type: string }
+                  error: { type: string }
+  /tier-pass:
+    post:
+      summary: Exchange a main-wallet signature for a tier pass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, signature, issuedAt]
+              properties:
+                address: { $ref: "#/components/schemas/Address" }
+                signature: { type: string, description: personal_sign over "Sepia tier pass\n<issuedAt>" }
+                issuedAt: { type: integer, description: unix seconds, must be within 5 minutes }
+      responses:
+        "200":
+          description: Pass issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pass: { type: string }
+                  tier: { type: string, enum: [Open, Ink, Cloud, Abyss] }
+                  expiresAt: { type: integer }
+components:
+  schemas:
+    Address: { type: string, pattern: "^0x[0-9a-fA-F]{40}$" }
+    Uint: { type: string, pattern: "^[0-9]+$", description: decimal string }
+    Withdraw:
+      type: object
+      description: Mirrors SepiaRouter.Withdraw (EIP-712, domain SepiaRouter v1, chainId 4663)
+      required: [owner, token, to, amount, relayer, relayerFee, protocolFee, nonce, deadline]
+      properties:
+        owner: { $ref: "#/components/schemas/Address" }
+        token: { $ref: "#/components/schemas/Address" }
+        to: { $ref: "#/components/schemas/Address" }
+        amount: { $ref: "#/components/schemas/Uint" }
+        relayer: { $ref: "#/components/schemas/Address" }
+        relayerFee: { $ref: "#/components/schemas/Uint" }
+        protocolFee: { $ref: "#/components/schemas/Uint" }
+        nonce: { $ref: "#/components/schemas/Uint" }
+        deadline: { $ref: "#/components/schemas/Uint" }
+    Quote:
+      type: object
+      properties:
+        quoteId: { type: string }
+        path: { type: string, enum: [B-permit, C-topup] }
+        relayer: { $ref: "#/components/schemas/Address" }
+        relayerFee: { $ref: "#/components/schemas/Uint" }
+        protocolFee: { $ref: "#/components/schemas/Uint" }
+        topUpWei: { $ref: "#/components/schemas/Uint" }
+        tier: { type: string, enum: [Open, Ink, Cloud, Abyss] }
+        expiresAt: { type: integer }
+    PermitWithdraw:
+      type: object
+      required: [type, quoteId, withdraw, withdrawSig, permit]
+      properties:
+        type: { const: permit }
+        quoteId: { type: string }
+        withdraw: { $ref: "#/components/schemas/Withdraw" }
+        withdrawSig: { type: string }
+        permit:
+          type: object
+          properties:
+            deadline: { $ref: "#/components/schemas/Uint" }
+            v: { type: integer }
+            r: { type: string }
+            s: { type: string }
+    TopUpRequest:
+      type: object
+      required: [type, quoteId, owner]
+      properties:
+        type: { const: topup }
+        quoteId: { type: string }
+        owner: { $ref: "#/components/schemas/Address" }
